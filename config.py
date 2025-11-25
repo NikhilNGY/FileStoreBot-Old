@@ -22,7 +22,7 @@ def env_str(key, default):
 
 API_ID = env_int("API_ID", 2468192)
 API_HASH = env_str("API_HASH", "4906b3f8f198ec0e24edb2c197677678")
-BOT_TOKEN = env_str("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+BOT_TOKEN = env_str("BOT_TOKEN", "7845953013:AAEYbYFSCkC6IuGy9yrUz1E56EFmtge_jQs")
 SESSION = env_str("SESSION", "Codeflixold")
 
 
