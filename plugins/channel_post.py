@@ -5,8 +5,6 @@ from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ParseMode
 from pyrogram.errors import FloodWait
-# Import the database instance
-from helper.database import MongoDB
 
 # --- Helper Method ---
 def generate_random_id(length=8):
@@ -28,8 +26,9 @@ not_numeric_filter = filters.create(is_not_numeric_reply)
     not_numeric_filter
 )
 async def channel_post(client: Client, message: Message):
-    if message.from_user.id not in client.admins:
-        return await message.reply(client.reply_text)
+    if hasattr(client, 'admins') and message.from_user.id not in client.admins:
+        text = getattr(client, 'reply_text', "You are not authorized.")
+        return await message.reply(text)
     
     reply_text = await message.reply_text("Please Wait, processing file...", quote=True)
     
@@ -48,8 +47,8 @@ async def channel_post(client: Client, message: Message):
     # 1. Generate unique ID
     file_id = generate_random_id()
     
-    # 2. Save to Database (Mapping: file_id -> message_id)
-    await db.add_file(file_id, post_message.id)
+    # 2. Save to Database using client.mongodb (NOT global db)
+    await client.mongodb.add_file(file_id, post_message.id)
     
     # 3. Generate Blogspot Link
     link = f"https://krpicture0.blogspot.com?start={file_id}"
@@ -65,7 +64,10 @@ async def channel_post(client: Client, message: Message):
     )
 
     if not client.disable_btn:
-        await post_message.edit_reply_markup(reply_markup)
+        try:
+            await post_message.edit_reply_markup(reply_markup)
+        except Exception:
+            pass
 
 
 @Client.on_message(filters.channel & filters.incoming)
@@ -80,8 +82,8 @@ async def new_post(client: Client, message: Message):
     # 1. Generate unique ID
     file_id = generate_random_id()
     
-    # 2. Save to Database
-    await db.add_file(file_id, message.id)
+    # 2. Save to Database using client.mongodb
+    await client.mongodb.add_file(file_id, message.id)
     
     # 3. Generate Blogspot Link
     link = f"https://krpicture0.blogspot.com?start={file_id}"
@@ -94,4 +96,3 @@ async def new_post(client: Client, message: Message):
     except Exception as e:
         print(e)
         pass
-
