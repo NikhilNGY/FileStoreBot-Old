@@ -2,10 +2,11 @@
 
 import asyncio
 import json
+import sys
 from bot import Bot, web_app
 from pyrogram import compose
 
-# Static default fallback message templates (can be overridden per setup entry if needed)
+# Static default fallback message templates
 default_messages = {
     'START': '<blockquote expandable>__Lorem ipsum dolor sit amet,\nconsectetur adipiscing elit sed.\nVivamus luctus urna sed urna.\nCurabitur blandit tempus porttitor.\nNullam quis risus eget urna.__</blockquote>',
     'FSUB': '',
@@ -19,25 +20,55 @@ async def main():
     app = []
 
     # Load setup.json
-    with open("setup.json", "r") as f:
-        setups = json.load(f)
+    try:
+        with open("setup.json", "r") as f:
+            setups = json.load(f)
+    except FileNotFoundError:
+        print("❌ Error: setup.json file not found!")
+        return
+    except json.JSONDecodeError:
+        print("❌ Error: setup.json is not a valid JSON file. Please check for syntax errors.")
+        return
 
     # Loop through each bot setup config
-    for config in setups:
-        session = config["session"]
-        workers = config["workers"]
-        db = config["db"]
-        fsubs = config["fsubs"]
-        token = config["token"]
-        admins = config["admins"]
+    for i, config in enumerate(setups):
+        session = config.get("session", f"Bot_{i}")
+        
+        # --- FIX: Validation Checks ---
+        api_id_raw = config.get("api_id")
+        token = config.get("token")
+
+        if not api_id_raw:
+            print(f"⚠️ SKIPPING Bot '{session}': API_ID is missing or empty in setup.json.")
+            continue
+            
+        if not token:
+            print(f"⚠️ SKIPPING Bot '{session}': Bot Token is missing in setup.json.")
+            continue
+
+        try:
+            api_id = int(api_id_raw)
+        except ValueError:
+            print(f"⚠️ SKIPPING Bot '{session}': API_ID '{api_id_raw}' is not a number.")
+            continue
+        # ------------------------------
+
+        # Safely get other variables with defaults if needed
+        workers = config.get("workers", 4)
+        db = config.get("db")
+        fsubs = config.get("fsubs", {})
+        admins = config.get("admins", [])
         messages = config.get("messages", default_messages)
-        auto_del = config["auto_del"]
-        db_uri = config["db_uri"]
-        db_name = config["db_name"]
-        api_id = int(config["api_id"])
-        api_hash = config["api_hash"]
-        protect = config["protect"]
-        disable_btn = config["disable_btn"]
+        auto_del = config.get("auto_del", 0)
+        db_uri = config.get("db_uri")
+        db_name = config.get("db_name")
+        api_hash = config.get("api_hash")
+        protect = config.get("protect", False)
+        disable_btn = config.get("disable_btn", False)
+
+        if not api_hash:
+             print(f"⚠️ SKIPPING Bot '{session}': API_HASH is missing.")
+             continue
 
         app.append(
             Bot(
@@ -58,6 +89,11 @@ async def main():
             )
         )
 
+    if not app:
+        print("❌ No valid bot configurations found. Exiting.")
+        sys.exit(1)
+
+    print(f"✅ Starting {len(app)} bot(s)...")
     await compose(app)
 
 
@@ -67,4 +103,8 @@ async def runner():
         web_app()
     )
 
-asyncio.run(runner())
+if __name__ == "__main__":
+    try:
+        asyncio.run(runner())
+    except KeyboardInterrupt:
+        print("Bot stopped by user.")
