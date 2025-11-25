@@ -10,8 +10,8 @@ from pyrogram.enums import ParseMode
 # Config imports
 from config import LOGGER, PORT, OWNER_ID
 
-# Import the Database class we created in database.py
-from helper.database import MongoDB 
+# Import the Database class from database.py
+from helper.database import MongoDB  
 
 version = "v1.0.0"
 
@@ -127,8 +127,8 @@ class Bot(Client):
         except Exception as e:
             self.LOGGER(__name__, self.name).warning(e)
             self.LOGGER(__name__, self.name).error(f"Make Sure bot is Admin in DB Channel ({self.db}) and permissions are correct.")
-            self.LOGGER(__name__, self.name).info("Bot Stopped. Exiting...")
-            sys.exit(1)
+            # We comment out sys.exit(1) so the bot stays alive even if the DB channel is invalid initially.
+            # sys.exit(1)
 
         self.LOGGER(__name__, self.name).info(f"Bot @{self.username} Started!!")
 
