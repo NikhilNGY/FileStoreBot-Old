@@ -2,16 +2,18 @@
 
 from aiohttp import web
 from plugins import web_server
-
-from pyrogram import Client
-from pyrogram.enums import ParseMode
 import sys
 from datetime import datetime
+from pyrogram import Client
+from pyrogram.enums import ParseMode
+
+# Config imports
 from config import LOGGER, PORT, OWNER_ID
-from helper import MongoDB
+
+# Import the Database class we created in database.py
+from database import Database 
 
 version = "v1.0.0"
-
 
 class Bot(Client):
     def __init__(self, session, workers, db, fsub, token, admins, messages, auto_del, db_uri, db_name, api_id, api_hash, protect, disable_btn):
@@ -27,7 +29,7 @@ class Bot(Client):
         )
         self.LOGGER = LOGGER
         self.name = session
-        self.db = db
+        self.db = db # This is the Channel ID
         self.fsub = fsub
         self.owner = OWNER_ID
         self.fsub_dict = {}
@@ -38,7 +40,9 @@ class Bot(Client):
         self.req_fsub = {}
         self.disable_btn = disable_btn
         self.reply_text = messages.get('REPLY', 'Do not send any useless message in the bot.')
-        self.mongodb = MongoDB(db_uri, db_name)
+        
+        # Initialize the Database Class
+        self.mongodb = Database(db_uri, db_name)
         self.req_channels = []
     
     def get_current_settings(self):
@@ -57,8 +61,9 @@ class Bot(Client):
         await super().start()
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
+        self.username = usr_bot_me.username
 
-        # Load persisted settings from MongoDB
+        # --- Load Settings from MongoDB ---
         saved_settings = await self.mongodb.load_settings(self.name)
         if saved_settings:
             self.LOGGER(__name__, self.name).info("Found saved settings in database. Loading them.")
@@ -72,7 +77,7 @@ class Bot(Client):
         else:
             self.LOGGER(__name__, self.name).info("No saved settings found. Using initial config from setup.json.")
 
-        # Re-initialize fsub_dict with the correct fsub list
+        # --- Initialize Force Sub Channels ---
         self.fsub_dict = {}
         if len(self.fsub) > 0:
             for channel in self.fsub:
@@ -80,37 +85,52 @@ class Bot(Client):
                     chat = await self.get_chat(channel[0])
                     name = chat.title
                     link = None
-                    if not channel[1]: # if request is False
+                    
+                    # Try getting existing invite link if request is False
+                    if not channel[1]: 
                         try:
                            link = chat.invite_link
-                        except AttributeError: # If invite link is not available
+                        except AttributeError:
                            pass
-                    if not link and channel[2] <= 0: # If no link and no timer
-                        chat_link = await self.create_chat_invite_link(channel[0], creates_join_request=channel[1])
-                        link = chat_link.invite_link
                     
-                    self.fsub_dict[channel[0]] = [name, link, channel[1], channel[2]]
+                    # If no link found, or if we need a specific request link
+                    if not link:
+                        # If (No Link AND Timer is 0) OR (It is a Join Request)
+                        if channel[2] <= 0 or channel[1]:
+                            try:
+                                chat_link = await self.create_chat_invite_link(channel[0], creates_join_request=channel[1])
+                                link = chat_link.invite_link
+                            except Exception as e:
+                                self.LOGGER(__name__, self.name).error(f"Failed to create invite link: {e}")
+                                link = None
+
+                    # Only add to dict if we successfully established the channel
+                    if name:
+                        self.fsub_dict[channel[0]] = [name, link, channel[1], channel[2]]
+                    
                     if channel[1]:
                         self.req_channels.append(channel[0])
 
                 except Exception as e:
                     self.LOGGER(__name__, self.name).warning(f"Bot can't Export Invite link from Force Sub Channel {channel[0]}! Error: {e}")
-                    # Continue without this channel instead of stopping the bot
-            await self.mongodb.set_channels(self.req_channels)
+            
+            # Save required channels to DB for subscription checking
+            if self.req_channels:
+                await self.mongodb.set_channels(self.req_channels)
 
+        # --- Check DB Channel Access ---
         try:
             db_channel = await self.get_chat(self.db)
             self.db_channel = db_channel
-            test = await self.send_message(chat_id = db_channel.id, text = "Testing Message by @VOATcb")
+            test = await self.send_message(chat_id = db_channel.id, text = f"Bot Started: @{self.username}")
             await test.delete()
         except Exception as e:
             self.LOGGER(__name__, self.name).warning(e)
-            self.LOGGER(__name__, self.name).warning(f"Make Sure bot is Admin in DB Channel, and Double check the database channel Value, Current Value {self.db}")
-            self.LOGGER(__name__, self.name).info("\nBot Stopped. Join https://t.me/Yugen_Bots_Support for support")
-            sys.exit()
+            self.LOGGER(__name__, self.name).error(f"Make Sure bot is Admin in DB Channel ({self.db}) and permissions are correct.")
+            self.LOGGER(__name__, self.name).info("Bot Stopped. Exiting...")
+            sys.exit(1)
 
-        self.LOGGER(__name__, self.name).info("Bot Started!!")
-        self.username = usr_bot_me.username
+        self.LOGGER(__name__, self.name).info(f"Bot @{self.username} Started!!")
 
     async def stop(self, *args):
         await super().stop()
@@ -118,7 +138,9 @@ class Bot(Client):
 
 
 async def web_app():
-    app = web.AppRunner(await web_server())
+    # ensure plugins.web_server returns a web.Application
+    app = web.AppRunner(await web_server()) 
     await app.setup()
     bind_address = "0.0.0.0"
-    await web.TCPSite(app, bind_address, PORT).start()
+    # Ensure PORT is an integer
+    await web.TCPSite(app, bind_address, int(PORT)).start()
