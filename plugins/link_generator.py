@@ -7,9 +7,6 @@ from pyrogram.enums import ParseMode
 from pyrogram.errors.pyromod import ListenerTimeout
 from helper.helper_func import get_message_id
 
-# --- CRITICAL FIX: Import the 'db' instance, not the class ---
-from helper.database import db 
-
 # --- Helper Methods ---
 
 def generate_random_id(length=8):
@@ -61,8 +58,8 @@ async def batch(client: Client, message: Message):
     # 3. Generate ID and Save to DB
     file_id = generate_random_id()
     
-    # Save to MongoDB
-    await db.add_file(file_id, f_msg_id, s_msg_id)
+    # --- FIX: Use client.mongodb instead of global db ---
+    await client.mongodb.add_file(file_id, f_msg_id, s_msg_id)
     
     # 4. Generate Link
     link = f"https://krpicture0.blogspot.com?start={file_id}"
@@ -98,8 +95,8 @@ async def link_generator(client: Client, message: Message):
     # 2. Generate ID and Save to DB
     file_id = generate_random_id()
     
-    # Save to MongoDB (Only Start ID, To ID is None)
-    await db.add_file(file_id, msg_id, to_id=None)
+    # --- FIX: Use client.mongodb instead of global db ---
+    await client.mongodb.add_file(file_id, msg_id, to_id=None)
     
     # 3. Generate Link
     link = f"https://krpicture0.blogspot.com?start={file_id}"
