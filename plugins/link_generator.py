@@ -6,8 +6,9 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ParseMode
 from pyrogram.errors.pyromod import ListenerTimeout
 from helper.helper_func import get_message_id
-# Import the database instance we created in database.py
-from helper.database import MongoDB
+
+# --- CRITICAL FIX: Import the 'db' instance, not the class ---
+from helper.database import db 
 
 # --- Helper Methods ---
 
@@ -30,9 +31,8 @@ async def ask_for_message(client, user_id, prompt_text):
 
 @Client.on_message(filters.private & filters.command('batch'))
 async def batch(client: Client, message: Message):
-    # Check if user is admin (assuming client.admins is set in your main file)
+    # Check if user is admin
     if hasattr(client, 'admins') and message.from_user.id not in client.admins:
-        # Fallback text if client.reply_text isn't set
         text = getattr(client, 'reply_text', "You are not authorized.")
         return await message.reply(text)
     
@@ -61,7 +61,7 @@ async def batch(client: Client, message: Message):
     # 3. Generate ID and Save to DB
     file_id = generate_random_id()
     
-    # Save to MongoDB (Start ID and End ID)
+    # Save to MongoDB
     await db.add_file(file_id, f_msg_id, s_msg_id)
     
     # 4. Generate Link
@@ -112,4 +112,3 @@ async def link_generator(client: Client, message: Message):
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
-
