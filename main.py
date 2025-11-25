@@ -34,7 +34,7 @@ async def main():
     for i, config in enumerate(setups):
         session = config.get("session", f"Bot_{i}")
         
-        # --- FIX: Validation Checks ---
+        # --- Validation Checks ---
         api_id_raw = config.get("api_id")
         token = config.get("token")
 
@@ -94,10 +94,13 @@ async def main():
         sys.exit(1)
 
     print(f"✅ Starting {len(app)} bot(s)...")
+    
+    # compose() handles starting all clients and idling
     await compose(app)
 
 
 async def runner():
+    # Run the bot manager (main) and the web server (web_app) concurrently
     await asyncio.gather(
         main(),
         web_app()
