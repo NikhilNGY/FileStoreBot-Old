@@ -1,7 +1,7 @@
 import motor.motor_asyncio
 from datetime import datetime
 
-class Database:
+class MongoDB:
     def __init__(self, uri, database_name):
         # 1. Initialize Client and DB
         self.client = motor.motor_asyncio.AsyncIOMotorClient(uri)
