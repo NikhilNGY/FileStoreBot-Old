@@ -11,7 +11,7 @@ from pyrogram.enums import ParseMode
 from config import LOGGER, PORT, OWNER_ID
 
 # Import the Database class we created in database.py
-from database import Database 
+from helper.database import MongoDB 
 
 version = "v1.0.0"
 
