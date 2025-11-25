@@ -5,7 +5,7 @@ from logging.handlers import RotatingFileHandler
 import os 
 
 LOG_FILE_NAME = "bot.log"
-PORT = os.environ.get("PORT", "8020")
+PORT = os.environ.get("PORT", "8080")
 
 OWNER_ID = 6648688093  # Replace with your own Owner ID if needed
 MSG_EFFECT = 5046509860389126442
