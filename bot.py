@@ -1,4 +1,4 @@
-# Made by @NaapaExtra for @Realm_Bots 
+# Made by @Sandalwood_Bots 
 
 from aiohttp import web
 from plugins import web_server
@@ -31,7 +31,14 @@ class Bot(Client):
         )
         self.LOGGER = LOGGER
         self.name = session
-        self.db = db # This is the Channel ID
+        
+        # --- FIX: Ensure DB Channel ID is an Integer ---
+        try:
+            self.db = int(db)
+        except ValueError:
+            self.db = db # Keep as string if it's a username (e.g. @Channel)
+        # -----------------------------------------------
+
         self.fsub = fsub
         self.owner = OWNER_ID
         self.fsub_dict = {}
@@ -132,6 +139,7 @@ class Bot(Client):
 
         # --- Check DB Channel Access ---
         try:
+            # We use self.db which is now guaranteed to be an int (if numeric) or str (if username)
             db_channel = await self.get_chat(self.db)
             self.db_channel = db_channel
             test = await self.send_message(chat_id = db_channel.id, text = f"Bot Started: @{self.username}")
@@ -139,7 +147,6 @@ class Bot(Client):
         except Exception as e:
             self.LOGGER(__name__, self.name).warning(e)
             self.LOGGER(__name__, self.name).error(f"Make Sure bot is Admin in DB Channel ({self.db}) and permissions are correct.")
-            # We comment out sys.exit(1) so the bot stays alive even if the DB channel is invalid initially.
             # sys.exit(1)
 
         self.LOGGER(__name__, self.name).info(f"Bot @{self.username} Started!!")
