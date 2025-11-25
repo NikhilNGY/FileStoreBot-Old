@@ -42,7 +42,7 @@ class Bot(Client):
         self.reply_text = messages.get('REPLY', 'Do not send any useless message in the bot.')
         
         # Initialize the Database Class
-        self.mongodb = Database(db_uri, db_name)
+        self.mongodb = MongoDB(db_uri, db_name)
         self.req_channels = []
     
     def get_current_settings(self):
