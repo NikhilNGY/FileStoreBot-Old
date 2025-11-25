@@ -6,7 +6,7 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ParseMode
 from pyrogram.errors import FloodWait
 # Import the database instance
-from database import db 
+from helper.database import MongoDB
 
 # --- Helper Method ---
 def generate_random_id(length=8):
@@ -94,3 +94,4 @@ async def new_post(client: Client, message: Message):
     except Exception as e:
         print(e)
         pass
+
