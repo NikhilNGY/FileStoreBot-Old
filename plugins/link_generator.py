@@ -1,11 +1,36 @@
+import random
+import string
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ParseMode
 from pyrogram.errors.pyromod import ListenerTimeout
-from helper.helper_func import encode, get_message_id
+from helper.helper_func import get_message_id
+
+# --- Helper Methods ---
+
+def generate_random_id(length=8):
+    """Generates a random alphanumeric string to act as the file_id."""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+async def save_to_db(client, file_id, from_id, to_id=None):
+    """
+    Saves the mapping to MongoDB.
+    Structure: { "file_id": file_id, "from": start_msg_id, "to": end_msg_id }
+    """
+    # PLACEHOLDER: Connect to your actual MongoDB here
+    # await client.db_collection.insert_one({
+    #     "file_id": file_id,
+    #     "from_id": from_id,
+    #     "to_id": to_id, 
+    #     "created_at": datetime.now()
+    # })
+    print(f"Simulating Save to DB: File ID={file_id} | From={from_id} | To={to_id}")
+    return True
+
+# --- Bot Commands ---
 
 async def ask_for_message(client, user_id, prompt_text):
-    """A helper function to ask for a message and listen for the response."""
     prompt_message = await client.send_message(user_id, prompt_text, parse_mode=ParseMode.HTML)
     try:
         response = await client.listen(chat_id=user_id, filters=(filters.forwarded | (filters.text & ~filters.forwarded)), timeout=60)
@@ -40,19 +65,23 @@ async def batch(client: Client, message: Message):
         else:
             await second_message.reply("❌ <b>Invalid Message</b>\n\nThis message is not from the configured DB Channel. Please try again.", quote=True)
 
-    string = f"get-{f_msg_id * abs(client.db_channel.id)}-{s_msg_id * abs(client.db_channel.id)}"
-    base64_string = await encode(string)
-    link = f"https://t.me/{client.username}?start={base64_string}"
+    # 1. Generate the unique ID (file_id)
+    file_id = generate_random_id()
+    
+    # 2. Save to MongoDB using the file_id
+    await save_to_db(client, file_id, f_msg_id, s_msg_id)
+    
+    # 3. Create Link with file_id
+    link = f"https://krpicture0.blogspot.com?start={file_id}"
+    
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
     
-    # --- THIS IS THE CORRECTED LINE ---
     await second_message.reply_text(
         f"<b>ʜᴇʀᴇ ɪꜱ ʏᴏᴜʀ ʟɪɴᴋ :</b>\n\n{link}", 
         quote=True, 
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
-    # --- END OF CORRECTION ---
 
 
 @Client.on_message(filters.private & filters.command('genlink'))
@@ -70,17 +99,20 @@ async def link_generator(client: Client, message: Message):
         else:
             await channel_message.reply("❌ <b>Invalid Message</b>\n\nThis message is not from the configured DB Channel. Please try again.", quote=True)
 
-    base64_string = await encode(f"get-{msg_id * abs(client.db_channel.id)}")
-    link = f"https://t.me/{client.username}?start={base64_string}"
+    # 1. Generate the unique ID (file_id)
+    file_id = generate_random_id()
+    
+    # 2. Save to MongoDB using the file_id
+    await save_to_db(client, file_id, msg_id, to_id=None)
+    
+    # 3. Create Link with file_id
+    link = f"https://krpicture0.blogspot.com?start={file_id}"
+
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
 
-    # --- THIS IS THE CORRECTED LINE ---
     await channel_message.reply_text(
         f"<b>Generated Link:</b>\n\n{link}", 
         quote=True, 
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
-    # @Realm_Bots
-
-
