@@ -3,14 +3,16 @@
 from aiohttp import web
 from plugins import web_server
 import sys
+import asyncio
 from datetime import datetime
 from pyrogram import Client
 from pyrogram.enums import ParseMode
+from pyrogram.errors import FloodWait
 
 # Config imports
 from config import LOGGER, PORT, OWNER_ID
 
-# Import the Database class from database.py
+# Import the Database class
 from helper.database import MongoDB  
 
 version = "v1.0.0"
@@ -58,7 +60,17 @@ class Bot(Client):
         }
 
     async def start(self):
-        await super().start()
+        # --- FloodWait Protection ---
+        try:
+            await super().start()
+        except FloodWait as e:
+            self.LOGGER(__name__, self.name).warning(f"⚠️ FloodWait triggered: Waiting for {e.value} seconds...")
+            await asyncio.sleep(e.value)
+            await super().start()
+        except Exception as e:
+            self.LOGGER(__name__, self.name).error(f"Failed to start client: {e}")
+            sys.exit(1)
+
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
         self.username = usr_bot_me.username
