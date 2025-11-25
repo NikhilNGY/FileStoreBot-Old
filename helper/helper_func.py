@@ -1,6 +1,7 @@
-import base64
 import re
 import asyncio
+import random
+import string
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ChatMemberStatus, ParseMode
@@ -8,18 +9,12 @@ from pyrogram.errors import UserNotParticipant, Forbidden, PeerIdInvalid, ChatAd
 from datetime import datetime, timedelta
 from pyrogram import errors
 
-async def encode(string):
-    string_bytes = string.encode("ascii")
-    base64_bytes = base64.urlsafe_b64encode(string_bytes)
-    base64_string = (base64_bytes.decode("ascii")).strip("=")
-    return base64_string
+# --- New Method: Random ID Generator ---
+def generate_random_id(length=8):
+    """Generates a random alphanumeric string to act as the file_id."""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
-async def decode(base64_string):
-    base64_string = base64_string.strip("=")
-    base64_bytes = (base64_string + "=" * (-len(base64_string) % 4)).encode("ascii")
-    string_bytes = base64.urlsafe_b64decode(base64_bytes) 
-    string = string_bytes.decode("ascii")
-    return string
+# --- Message Retrieval Methods ---
 
 async def get_messages(client, message_ids):
     messages = []
@@ -37,7 +32,7 @@ async def get_messages(client, message_ids):
                 chat_id=client.db,
                 message_ids=temb_ids
             )
-        except:
+        except Exception:
             pass
         total_messages += len(temb_ids)
         messages.extend(msgs)
@@ -52,21 +47,25 @@ async def get_message_id(client, message):
     elif message.forward_sender_name:
         return 0
     elif message.text:
-        pattern = r"https://t.me/(?:c/)?(.*)/(\d+)"
-        matches = re.match(pattern,message.text)
+        # Regex to handle https://t.me/ and https://telegram.me/
+        pattern = r"https://(?:t|telegram)\.me/(?:c/)?(.*)/(\d+)"
+        matches = re.match(pattern, message.text)
         if not matches:
             return 0
         channel_id = matches.group(1)
         msg_id = int(matches.group(2))
+        
+        # Check if the link belongs to the DB channel
         if channel_id.isdigit():
             if f"-100{channel_id}" == str(client.db):
                 return msg_id
         else:
+            # Handle username based links
             if hasattr(client, 'db_channel') and client.db_channel.username and channel_id == client.db_channel.username:
                 return msg_id
-    else:
-        return 0
+    return 0
 
+# --- Utility Methods ---
 
 def get_readable_time(seconds: int) -> str:
     count = 0
@@ -105,11 +104,17 @@ async def is_bot_admin(client, channel_id):
     except Exception as e:
         return False, f"Unexpected error: {str(e)}"
 
+# --- Force Sub Methods ---
+
 async def check_subscription(client, user_id):
     statuses = {}
+    if not hasattr(client, 'fsub_dict') or not client.fsub_dict:
+        return statuses
+
     for channel_id, (channel_name, channel_link, request, timer) in client.fsub_dict.items():
         if request:
-            send_req = await client.mongodb.is_user_in_channel(channel_id, user_id)
+            # Using the new DB instance logic if available
+            send_req = await client.db_instance.is_user_in_channel(channel_id, user_id) if hasattr(client, 'db_instance') else False
             if send_req:
                 statuses[channel_id] = ChatMemberStatus.MEMBER
                 continue
@@ -119,10 +124,13 @@ async def check_subscription(client, user_id):
         except UserNotParticipant:
             statuses[channel_id] = ChatMemberStatus.BANNED
         except Forbidden:
-            client.LOGGER(__name__, client.name).warning(f"Bot lacks permission for {channel_name}.")
+            # Use getattr to avoid crash if LOGGER isn't set up yet
+            logger = getattr(client, 'LOGGER', print)
+            logger(__name__, client.name).warning(f"Bot lacks permission for {channel_name}.")
             statuses[channel_id] = None
         except Exception as e:
-            client.LOGGER(__name__, client.name).warning(f"Error checking {channel_name}: {e}")
+            logger = getattr(client, 'LOGGER', print)
+            logger(__name__, client.name).warning(f"Error checking {channel_name}: {e}")
             statuses[channel_id] = None
     return statuses
 
@@ -137,10 +145,13 @@ def is_user_subscribed(statuses):
 def force_sub(func):
     """Decorator to enforce force subscription with a beautiful status message."""
     async def wrapper(client: Client, message: Message):
-        if not client.fsub_dict:
+        if not hasattr(client, 'fsub_dict') or not client.fsub_dict:
             return await func(client, message)
         
-        photo = client.messages.get('FSUB_PHOTO', '')
+        # Safely get messages or default
+        msgs_config = getattr(client, 'messages', {})
+        photo = msgs_config.get('FSUB_PHOTO', '')
+        
         if photo:
             msg = await message.reply_photo(caption="<code>Checking subscription...</code>", photo=photo, parse_mode=ParseMode.HTML)
         else:
@@ -156,7 +167,6 @@ def force_sub(func):
         buttons = []
         
         # --- THIS IS THE BEAUTIFIED PART ---
-        # We build the status list first
         status_lines = []
         for c, (channel_id, (channel_name, channel_link, request, timer)) in enumerate(client.fsub_dict.items(), 1):
             status = statuses.get(channel_id)
@@ -168,27 +178,28 @@ def force_sub(func):
                 status_text = "<i>Required</i> ❗️"
                 # Add a join button only if not joined
                 if timer > 0:
-                    expire_time = datetime.now() + timedelta(minutes=timer)
-                    invite = await client.create_chat_invite_link(chat_id=channel_id, expire_date=expire_time, creates_join_request=request)
-                    channel_link = invite.invite_link
+                    try:
+                        expire_time = datetime.now() + timedelta(minutes=timer)
+                        invite = await client.create_chat_invite_link(chat_id=channel_id, expire_date=expire_time, creates_join_request=request)
+                        channel_link = invite.invite_link
+                    except Exception:
+                        pass # Fallback to original link if error
                 buttons.append(InlineKeyboardButton(f"Join {channel_name}", url=channel_link))
 
             status_lines.append(f"› {channel_name} - {status_text}")
         
-        # Now construct the final message
-        fsub_text = client.messages.get('FSUB', "<blockquote><b>Join Required</b></blockquote>\nYou must join the following channel(s) to continue:")
+        fsub_text = msgs_config.get('FSUB', "<blockquote><b>Join Required</b></blockquote>\nYou must join the following channel(s) to continue:")
         channels_message = f"{fsub_text}\n\n" + "\n".join(status_lines)
         # --- END OF BEAUTIFIED PART ---
 
         from_link = message.text.split(" ")
         if len(from_link) > 1:
-            try_again_link = f"https://t.me/{client.username}/?start={from_link[1]}"
-            # Add the "Try Again" button as a separate row for emphasis
+            try_again_link = f"https://krpicture0.blogspot.com/?start={from_link[1]}"
             try_again_button = [InlineKeyboardButton("🔄 Try Again", url=try_again_link)]
         else:
             try_again_button = []
 
-        # Organize join buttons in rows of 2, and the try again button on its own row
+        # Organize buttons
         button_layout = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
         if try_again_button:
             button_layout.append(try_again_button)
@@ -198,7 +209,8 @@ def force_sub(func):
         try:
             await msg.edit_text(text=channels_message, reply_markup=buttons_markup, parse_mode=ParseMode.HTML)
         except Exception as e:
-            client.LOGGER(__name__, client.name).warning(f"Error updating FSUB message: {e}")
+            logger = getattr(client, 'LOGGER', print)
+            logger(__name__, client.name).warning(f"Error updating FSUB message: {e}")
 
     return wrapper
 
@@ -209,18 +221,20 @@ async def delete_files(messages, client, k, enter):
             try:
                 await msg.delete()
             except Exception as e:
-                client.LOGGER(__name__, client.name).warning(f"Failed to auto-delete message {msg.id}: {e}")
+                logger = getattr(client, 'LOGGER', print)
+                logger(__name__, client.name).warning(f"Failed to auto-delete message {msg.id}: {e}")
     
     command_part = enter.split(" ")[1] if len(enter.split(" ")) > 1 else None
     keyboard = None
     if command_part:
-        button_url = f"https://t.me/{client.username}?start={command_part}"
+        # Reconstruct the link using the new File ID format
+        button_url = f"https://t.me/linkz_ki_duniyaa"
         keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Get Your File Again!", url=button_url)]]
+            [[InlineKeyboardButton("•  BACKUP CHANNEL  •", url=button_url)]]
         )
         
     await k.edit_text(
-        "<blockquote><b><i>Your file has been deleted to save space.</i></b></blockquote>",
+        "<blockquote><b><i>Your file has been deleted. If You Want Again File Then Again Open link In Channel</i></b></blockquote>",
         reply_markup=keyboard,
         parse_mode=ParseMode.HTML
     )
