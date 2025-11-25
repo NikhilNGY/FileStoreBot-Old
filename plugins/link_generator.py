@@ -7,7 +7,7 @@ from pyrogram.enums import ParseMode
 from pyrogram.errors.pyromod import ListenerTimeout
 from helper.helper_func import get_message_id
 # Import the database instance we created in database.py
-from database import db 
+from helper.database import MongoDB
 
 # --- Helper Methods ---
 
@@ -112,3 +112,4 @@ async def link_generator(client: Client, message: Message):
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
+
