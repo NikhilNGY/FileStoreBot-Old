@@ -33,6 +33,8 @@ async def get_messages(client, message_ids):
                 message_ids=temb_ids
             )
         except Exception:
+            # FIX: Ensure msgs is defined as empty list if error occurs
+            msgs = []
             pass
         total_messages += len(temb_ids)
         messages.extend(msgs)
@@ -114,7 +116,8 @@ async def check_subscription(client, user_id):
     for channel_id, (channel_name, channel_link, request, timer) in client.fsub_dict.items():
         if request:
             # Using the new DB instance logic if available
-            send_req = await client.db_instance.is_user_in_channel(channel_id, user_id) if hasattr(client, 'db_instance') else False
+            # FIX: Changed 'db_instance' to 'mongodb' to match bot.py
+            send_req = await client.mongodb.is_user_in_channel(channel_id, user_id) if hasattr(client, 'mongodb') else False
             if send_req:
                 statuses[channel_id] = ChatMemberStatus.MEMBER
                 continue
