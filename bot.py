@@ -1,5 +1,3 @@
-# Made by @NaapaExtra for @Realm_Bots 
-
 from aiohttp import web
 from plugins import web_server
 import sys
@@ -34,15 +32,21 @@ class Bot(Client):
         self.LOGGER = LOGGER
         self.name = session
         
-        # --- Handle Multiple Database Channels ---
+        # --- Handle Multiple Database Channels (Supports String or List) ---
         self.db_channels = []
         try:
             if isinstance(db, list):
                 self.db_channels = [int(x) for x in db]
+            elif isinstance(db, str):
+                # Handle comma separated string: "-100123, -100456"
+                if "," in db:
+                    self.db_channels = [int(x.strip()) for x in db.split(",") if x.strip().lstrip("-").isdigit()]
+                else:
+                    self.db_channels = [int(db)]
             else:
                 self.db_channels = [int(db)]
-        except ValueError:
-            self.LOGGER(__name__, self.name).warning("DB Channel ID format warning. Ensure they are integers.")
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(f"DB Channel ID format warning: {e}")
             if isinstance(db, list):
                 self.db_channels = db
             else:
@@ -79,7 +83,7 @@ class Bot(Client):
             "fsub": self.fsub
         }
 
-    # --- NEW METHOD: Auto Delete User Media in PM ---
+    # --- AUTO DELETE PM MEDIA HANDLER ---
     async def auto_delete_user_media_pm(self, client: Client, message: Message):
         user = message.from_user
         if not user or message.outgoing:
@@ -87,17 +91,18 @@ class Bot(Client):
 
         # Check if the message contains any media
         if any([message.document, message.video, message.audio, message.voice, message.photo, message.video_note]):
-            # Wait 4 hours (14400 seconds)
-            await asyncio.sleep(14400)
+            # Wait for the configured time (AUTO_DEL) or default to 4 hours
+            wait_time = self.auto_del if self.auto_del > 0 else 14400
+            await asyncio.sleep(wait_time)
             try:
                 await message.delete()
-                self.LOGGER(__name__, self.name).info(f"Auto-deleted media from user {user.id} in PM.")
+                # self.LOGGER(__name__, self.name).info(f"Auto-deleted media from user {user.id} in PM.")
             except Exception as e:
-                self.LOGGER(__name__, self.name).warning(f"Failed to auto-delete user media: {e}")
+                # self.LOGGER(__name__, self.name).warning(f"Failed to auto-delete user media: {e}")
+                pass
 
     async def start(self):
         # --- Register the Auto-Delete Handler ---
-        # This adds the handler manually since we are inside the class
         self.add_handler(
             MessageHandler(
                 self.auto_delete_user_media_pm, 
@@ -132,7 +137,7 @@ class Bot(Client):
             self.reply_text = saved_settings.get("reply_text", self.reply_text)
             self.fsub = saved_settings.get("fsub", self.fsub)
         else:
-            self.LOGGER(__name__, self.name).info("No saved settings found. Using initial config from setup.json.")
+            self.LOGGER(__name__, self.name).info("Using config.py settings.")
 
         # --- Initialize Force Sub Channels ---
         self.fsub_dict = {}
