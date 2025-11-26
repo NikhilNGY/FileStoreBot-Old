@@ -1,13 +1,15 @@
-# Made by @Sandalwood_Bots 
+# Made by @NaapaExtra for @Realm_Bots 
 
 from aiohttp import web
 from plugins import web_server
 import sys
 import asyncio
 from datetime import datetime
-from pyrogram import Client
+from pyrogram import Client, filters
 from pyrogram.enums import ParseMode
 from pyrogram.errors import FloodWait
+from pyrogram.handlers import MessageHandler 
+from pyrogram.types import Message
 
 # Config imports
 from config import LOGGER, PORT, OWNER_ID
@@ -32,12 +34,23 @@ class Bot(Client):
         self.LOGGER = LOGGER
         self.name = session
         
-        # --- FIX: Ensure DB Channel ID is an Integer ---
+        # --- Handle Multiple Database Channels ---
+        self.db_channels = []
         try:
-            self.db = int(db)
+            if isinstance(db, list):
+                self.db_channels = [int(x) for x in db]
+            else:
+                self.db_channels = [int(db)]
         except ValueError:
-            self.db = db # Keep as string if it's a username (e.g. @Channel)
-        # -----------------------------------------------
+            self.LOGGER(__name__, self.name).warning("DB Channel ID format warning. Ensure they are integers.")
+            if isinstance(db, list):
+                self.db_channels = db
+            else:
+                self.db_channels = [db]
+
+        # Set the PRIMARY DB (The first one) for saving new files
+        self.db = self.db_channels[0]
+        # ----------------------------------------------------
 
         self.fsub = fsub
         self.owner = OWNER_ID
@@ -66,7 +79,32 @@ class Bot(Client):
             "fsub": self.fsub
         }
 
+    # --- NEW METHOD: Auto Delete User Media in PM ---
+    async def auto_delete_user_media_pm(self, client: Client, message: Message):
+        user = message.from_user
+        if not user or message.outgoing:
+            return
+
+        # Check if the message contains any media
+        if any([message.document, message.video, message.audio, message.voice, message.photo, message.video_note]):
+            # Wait 4 hours (14400 seconds)
+            await asyncio.sleep(14400)
+            try:
+                await message.delete()
+                self.LOGGER(__name__, self.name).info(f"Auto-deleted media from user {user.id} in PM.")
+            except Exception as e:
+                self.LOGGER(__name__, self.name).warning(f"Failed to auto-delete user media: {e}")
+
     async def start(self):
+        # --- Register the Auto-Delete Handler ---
+        # This adds the handler manually since we are inside the class
+        self.add_handler(
+            MessageHandler(
+                self.auto_delete_user_media_pm, 
+                filters.private & ~filters.service
+            )
+        )
+        
         # --- FloodWait Protection ---
         try:
             await super().start()
@@ -105,16 +143,13 @@ class Bot(Client):
                     name = chat.title
                     link = None
                     
-                    # Try getting existing invite link if request is False
                     if not channel[1]: 
                         try:
                            link = chat.invite_link
                         except AttributeError:
                            pass
                     
-                    # If no link found, or if we need a specific request link
                     if not link:
-                        # If (No Link AND Timer is 0) OR (It is a Join Request)
                         if channel[2] <= 0 or channel[1]:
                             try:
                                 chat_link = await self.create_chat_invite_link(channel[0], creates_join_request=channel[1])
@@ -123,7 +158,6 @@ class Bot(Client):
                                 self.LOGGER(__name__, self.name).error(f"Failed to create invite link: {e}")
                                 link = None
 
-                    # Only add to dict if we successfully established the channel
                     if name:
                         self.fsub_dict[channel[0]] = [name, link, channel[1], channel[2]]
                     
@@ -133,21 +167,18 @@ class Bot(Client):
                 except Exception as e:
                     self.LOGGER(__name__, self.name).warning(f"Bot can't Export Invite link from Force Sub Channel {channel[0]}! Error: {e}")
             
-            # Save required channels to DB for subscription checking
             if self.req_channels:
                 await self.mongodb.set_channels(self.req_channels)
 
-        # --- Check DB Channel Access ---
-        try:
-            # We use self.db which is now guaranteed to be an int (if numeric) or str (if username)
-            db_channel = await self.get_chat(self.db)
-            self.db_channel = db_channel
-            test = await self.send_message(chat_id = db_channel.id, text = f"Bot Started: @{self.username}")
-            await test.delete()
-        except Exception as e:
-            self.LOGGER(__name__, self.name).warning(e)
-            self.LOGGER(__name__, self.name).error(f"Make Sure bot is Admin in DB Channel ({self.db}) and permissions are correct.")
-            # sys.exit(1)
+        # --- Check Access for ALL DB Channels ---
+        for db_id in self.db_channels:
+            try:
+                chat = await self.get_chat(db_id)
+                test = await self.send_message(chat_id=db_id, text=f"Bot Connected: @{self.username}")
+                await test.delete()
+            except Exception as e:
+                self.LOGGER(__name__, self.name).error(f"⚠️ Error accessing DB Channel {db_id}: {e}")
+                self.LOGGER(__name__, self.name).error("Make sure bot is Admin in ALL DB channels.")
 
         self.LOGGER(__name__, self.name).info(f"Bot @{self.username} Started!!")
 
