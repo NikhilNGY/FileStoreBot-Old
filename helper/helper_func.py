@@ -5,7 +5,7 @@ import string
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ChatMemberStatus, ParseMode
-from pyrogram.errors import UserNotParticipant, Forbidden, PeerIdInvalid, ChatAdminRequired, FloodWait
+from pyrogram.errors import UserNotParticipant, Forbidden, PeerIdInvalid, ChatAdminRequired, FloodWait, MessageIdInvalid
 from datetime import datetime, timedelta
 from pyrogram import errors
 
@@ -33,7 +33,6 @@ async def get_messages(client, message_ids):
                 message_ids=temb_ids
             )
         except Exception:
-            # FIX: Ensure msgs is defined as empty list if error occurs
             msgs = []
             pass
         total_messages += len(temb_ids)
@@ -116,7 +115,6 @@ async def check_subscription(client, user_id):
     for channel_id, (channel_name, channel_link, request, timer) in client.fsub_dict.items():
         if request:
             # Using the new DB instance logic if available
-            # FIX: Changed 'db_instance' to 'mongodb' to match bot.py
             send_req = await client.mongodb.is_user_in_channel(channel_id, user_id) if hasattr(client, 'mongodb') else False
             if send_req:
                 statuses[channel_id] = ChatMemberStatus.MEMBER
@@ -235,9 +233,14 @@ async def delete_files(messages, client, k, enter):
         keyboard = InlineKeyboardMarkup(
             [[InlineKeyboardButton("•  BACKUP CHANNEL  •", url=button_url)]]
         )
-        
-    await k.edit_text(
-        "<blockquote><b><i>Your file has been deleted. If You Want Again File Then Again Open link In Channel</i></b></blockquote>",
-        reply_markup=keyboard,
-        parse_mode=ParseMode.HTML
-    )
+    
+    # --- FIX: Added try/except block here ---
+    try:
+        await k.edit_text(
+            "<blockquote><b><i>Your file has been deleted. If You Want Again File Then Again Open link In Channel</i></b></blockquote>",
+            reply_markup=keyboard,
+            parse_mode=ParseMode.HTML
+        )
+    except Exception:
+        # Message likely deleted by user, safe to ignore
+        pass
