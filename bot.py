@@ -34,13 +34,12 @@ class Bot(Client):
         self.LOGGER = LOGGER
         self.name = session
         
-        # --- Handle Multiple Database Channels (Supports String or List from JSON) ---
+        # --- Handle Multiple Database Channels ---
         self.db_channels = []
         try:
             if isinstance(db, list):
                 self.db_channels = [int(x) for x in db]
             elif isinstance(db, str):
-                # Handle comma separated string if passed
                 if "," in db:
                     self.db_channels = [int(x.strip()) for x in db.split(",") if x.strip().lstrip("-").isdigit()]
                 else:
@@ -49,13 +48,12 @@ class Bot(Client):
                 self.db_channels = [int(db)]
         except Exception as e:
             self.LOGGER(__name__, self.name).warning(f"DB Channel ID format warning: {e}")
-            # Fallback
             if isinstance(db, list):
                 self.db_channels = db
             else:
                 self.db_channels = [db]
 
-        # Set the PRIMARY DB (The first one) for saving new files
+        # Set the PRIMARY DB (The first one)
         self.db = self.db_channels[0]
         # ----------------------------------------------------
 
@@ -70,12 +68,10 @@ class Bot(Client):
         self.disable_btn = disable_btn
         self.reply_text = messages.get('REPLY', 'Do not send any useless message in the bot.')
         
-        # Initialize the Database Class
         self.mongodb = MongoDB(db_uri, db_name)
         self.req_channels = []
     
     def get_current_settings(self):
-        """Returns a dictionary of the current settings to be saved."""
         return {
             "admins": self.admins,
             "messages": self.messages,
@@ -92,31 +88,29 @@ class Bot(Client):
         if not user or message.outgoing:
             return
 
-        # Check if the message contains any media
         if any([message.document, message.video, message.audio, message.voice, message.photo, message.video_note]):
-            # Wait for the configured time (AUTO_DEL) or default to 4 hours
+            # Wait for AUTO_DEL time (default 4 hours)
             wait_time = self.auto_del if self.auto_del > 0 else 14400
             await asyncio.sleep(wait_time)
             try:
                 await message.delete()
-                # self.LOGGER(__name__, self.name).info(f"Auto-deleted media from user {user.id} in PM.")
-            except Exception as e:
+            except Exception:
                 pass
 
     async def start(self):
-        # --- Register the Auto-Delete Handler ---
+        # --- Register Handler in GROUP 10 (Fixes Conflict) ---
         self.add_handler(
             MessageHandler(
                 self.auto_delete_user_media_pm, 
                 filters.private & ~filters.service
-            )
+            ),
+            group=10
         )
         
-        # --- FloodWait Protection ---
         try:
             await super().start()
         except FloodWait as e:
-            self.LOGGER(__name__, self.name).warning(f"⚠️ FloodWait triggered: Waiting for {e.value} seconds...")
+            self.LOGGER(__name__, self.name).warning(f"⚠️ FloodWait: Waiting {e.value}s...")
             await asyncio.sleep(e.value)
             await super().start()
         except Exception as e:
@@ -127,10 +121,10 @@ class Bot(Client):
         self.uptime = datetime.now()
         self.username = usr_bot_me.username
 
-        # --- Load Settings from MongoDB ---
+        # --- Load Settings ---
         saved_settings = await self.mongodb.load_settings(self.name)
         if saved_settings:
-            self.LOGGER(__name__, self.name).info("Found saved settings in database. Loading them.")
+            self.LOGGER(__name__, self.name).info("Found saved settings in database.")
             self.admins = saved_settings.get("admins", self.admins)
             self.messages = saved_settings.get("messages", self.messages)
             self.auto_del = saved_settings.get("auto_del", self.auto_del)
@@ -139,9 +133,9 @@ class Bot(Client):
             self.reply_text = saved_settings.get("reply_text", self.reply_text)
             self.fsub = saved_settings.get("fsub", self.fsub)
         else:
-            self.LOGGER(__name__, self.name).info("No saved settings found. Using initial config from setup.json.")
+            self.LOGGER(__name__, self.name).info("Using config.py settings.")
 
-        # --- Initialize Force Sub Channels ---
+        # --- Initialize FSubs ---
         self.fsub_dict = {}
         if len(self.fsub) > 0:
             for channel in self.fsub:
@@ -161,8 +155,7 @@ class Bot(Client):
                             try:
                                 chat_link = await self.create_chat_invite_link(channel[0], creates_join_request=channel[1])
                                 link = chat_link.invite_link
-                            except Exception as e:
-                                self.LOGGER(__name__, self.name).error(f"Failed to create invite link: {e}")
+                            except Exception:
                                 link = None
 
                     if name:
@@ -172,21 +165,19 @@ class Bot(Client):
                         self.req_channels.append(channel[0])
 
                 except Exception as e:
-                    self.LOGGER(__name__, self.name).warning(f"Bot can't Export Invite link from Force Sub Channel {channel[0]}! Error: {e}")
+                    self.LOGGER(__name__, self.name).warning(f"FSub Error {channel[0]}: {e}")
             
             if self.req_channels:
                 await self.mongodb.set_channels(self.req_channels)
 
-        # --- Check Access for ALL DB Channels ---
+        # --- Check DB Channels ---
         for db_id in self.db_channels:
             try:
                 chat = await self.get_chat(db_id)
-                # We send a test message to ensure we have Write Access
                 test = await self.send_message(chat_id=db_id, text=f"Bot Connected: @{self.username}")
                 await test.delete()
             except Exception as e:
-                self.LOGGER(__name__, self.name).error(f"⚠️ Error accessing DB Channel {db_id}: {e}")
-                self.LOGGER(__name__, self.name).error("Make sure bot is Admin in ALL DB channels.")
+                self.LOGGER(__name__, self.name).error(f"⚠️ DB Channel Error {db_id}: {e}")
 
         self.LOGGER(__name__, self.name).info(f"Bot @{self.username} Started!!")
 
@@ -196,9 +187,7 @@ class Bot(Client):
 
 
 async def web_app():
-    # ensure plugins.web_server returns a web.Application
     app = web.AppRunner(await web_server()) 
     await app.setup()
     bind_address = "0.0.0.0"
-    # Ensure PORT is an integer
     await web.TCPSite(app, bind_address, int(PORT)).start()
