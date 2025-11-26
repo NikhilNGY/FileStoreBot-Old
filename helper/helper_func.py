@@ -9,7 +9,7 @@ from pyrogram.errors import UserNotParticipant, Forbidden, PeerIdInvalid, ChatAd
 from datetime import datetime, timedelta
 from pyrogram import errors
 
-# --- New Method: Random ID Generator ---
+# --- Random ID Generator ---
 def generate_random_id(length=8):
     """Generates a random alphanumeric string to act as the file_id."""
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
@@ -17,31 +17,57 @@ def generate_random_id(length=8):
 # --- Message Retrieval Methods ---
 
 async def get_messages(client, message_ids):
+    """
+    Iterates through all configured DB channels to find the messages.
+    """
     messages = []
-    total_messages = 0
-    while total_messages != len(message_ids):
-        temb_ids = message_ids[total_messages:total_messages+200]
-        try:
-            msgs = await client.get_messages(
-                chat_id=client.db,
-                message_ids=temb_ids
-            )
-        except FloodWait as e:
-            await asyncio.sleep(e.x)
-            msgs = await client.get_messages(
-                chat_id=client.db,
-                message_ids=temb_ids
-            )
-        except Exception:
-            msgs = []
-            pass
-        total_messages += len(temb_ids)
-        messages.extend(msgs)
+    
+    # We loop through every channel in the list
+    for db_channel_id in client.db_channels:
+        # If we already found messages from a previous channel loop, we assume
+        # batch files are in the same channel, but if not found, we try the next.
+        # (This logic assumes a batch of files is wholly contained in one channel)
+        if messages: 
+            break
+
+        total_messages = 0
+        current_channel_messages = []
+        
+        while total_messages != len(message_ids):
+            temb_ids = message_ids[total_messages:total_messages+200]
+            try:
+                msgs = await client.get_messages(
+                    chat_id=db_channel_id,
+                    message_ids=temb_ids
+                )
+            except FloodWait as e:
+                await asyncio.sleep(e.x)
+                msgs = await client.get_messages(
+                    chat_id=db_channel_id,
+                    message_ids=temb_ids
+                )
+            except Exception:
+                msgs = []
+                pass
+            
+            # Filter out None values (empty messages)
+            valid_msgs = [m for m in msgs if m and not m.empty]
+            
+            total_messages += len(temb_ids)
+            current_channel_messages.extend(valid_msgs)
+
+        # If we found messages in this channel equal to what we asked for, use them.
+        # Or if we found at least one valid message, we assume this is the right channel.
+        if current_channel_messages:
+            messages = current_channel_messages
+            break
+
     return messages
 
 async def get_message_id(client, message):
     if message.forward_from_chat:
-        if message.forward_from_chat.id == client.db:
+        # Check if the forward comes from ANY of our DB channels
+        if message.forward_from_chat.id in client.db_channels:
             return message.forward_from_message_id
         else:
             return 0
@@ -56,12 +82,14 @@ async def get_message_id(client, message):
         channel_id = matches.group(1)
         msg_id = int(matches.group(2))
         
-        # Check if the link belongs to the DB channel
+        # Check if the link belongs to ANY DB channel
         if channel_id.isdigit():
-            if f"-100{channel_id}" == str(client.db):
+            # Convert channel_id from link to -100 format string
+            check_id = int(f"-100{channel_id}")
+            if check_id in client.db_channels:
                 return msg_id
         else:
-            # Handle username based links
+            # Handle username based links if configured
             if hasattr(client, 'db_channel') and client.db_channel.username and channel_id == client.db_channel.username:
                 return msg_id
     return 0
@@ -114,7 +142,6 @@ async def check_subscription(client, user_id):
 
     for channel_id, (channel_name, channel_link, request, timer) in client.fsub_dict.items():
         if request:
-            # Using the new DB instance logic if available
             send_req = await client.mongodb.is_user_in_channel(channel_id, user_id) if hasattr(client, 'mongodb') else False
             if send_req:
                 statuses[channel_id] = ChatMemberStatus.MEMBER
@@ -125,7 +152,6 @@ async def check_subscription(client, user_id):
         except UserNotParticipant:
             statuses[channel_id] = ChatMemberStatus.BANNED
         except Forbidden:
-            # Use getattr to avoid crash if LOGGER isn't set up yet
             logger = getattr(client, 'LOGGER', print)
             logger(__name__, client.name).warning(f"Bot lacks permission for {channel_name}.")
             statuses[channel_id] = None
@@ -149,7 +175,6 @@ def force_sub(func):
         if not hasattr(client, 'fsub_dict') or not client.fsub_dict:
             return await func(client, message)
         
-        # Safely get messages or default
         msgs_config = getattr(client, 'messages', {})
         photo = msgs_config.get('FSUB_PHOTO', '')
         
@@ -167,31 +192,28 @@ def force_sub(func):
 
         buttons = []
         
-        # --- THIS IS THE BEAUTIFIED PART ---
+        # --- Status Line Construction ---
         status_lines = []
         for c, (channel_id, (channel_name, channel_link, request, timer)) in enumerate(client.fsub_dict.items(), 1):
             status = statuses.get(channel_id)
             
-            # Set status text with HTML formatting
             if status in {ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER}:
                 status_text = "<b>Joined</b> ✅"
             else:
                 status_text = "<i>Required</i> ❗️"
-                # Add a join button only if not joined
                 if timer > 0:
                     try:
                         expire_time = datetime.now() + timedelta(minutes=timer)
                         invite = await client.create_chat_invite_link(chat_id=channel_id, expire_date=expire_time, creates_join_request=request)
                         channel_link = invite.invite_link
                     except Exception:
-                        pass # Fallback to original link if error
+                        pass 
                 buttons.append(InlineKeyboardButton(f"Join {channel_name}", url=channel_link))
 
             status_lines.append(f"› {channel_name} - {status_text}")
         
         fsub_text = msgs_config.get('FSUB', "<blockquote><b>Join Required</b></blockquote>\nYou must join the following channel(s) to continue:")
         channels_message = f"{fsub_text}\n\n" + "\n".join(status_lines)
-        # --- END OF BEAUTIFIED PART ---
 
         from_link = message.text.split(" ")
         if len(from_link) > 1:
@@ -200,7 +222,6 @@ def force_sub(func):
         else:
             try_again_button = []
 
-        # Organize buttons
         button_layout = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
         if try_again_button:
             button_layout.append(try_again_button)
@@ -228,13 +249,11 @@ async def delete_files(messages, client, k, enter):
     command_part = enter.split(" ")[1] if len(enter.split(" ")) > 1 else None
     keyboard = None
     if command_part:
-        # Reconstruct the link using the new File ID format
         button_url = f"https://t.me/linkz_ki_duniyaa"
         keyboard = InlineKeyboardMarkup(
             [[InlineKeyboardButton("•  BACKUP CHANNEL  •", url=button_url)]]
         )
     
-    # --- FIX: Added try/except block here ---
     try:
         await k.edit_text(
             "<blockquote><b><i>Your file has been deleted. If You Want Again File Then Again Open link In Channel</i></b></blockquote>",
@@ -242,5 +261,4 @@ async def delete_files(messages, client, k, enter):
             parse_mode=ParseMode.HTML
         )
     except Exception:
-        # Message likely deleted by user, safe to ignore
         pass
