@@ -1,5 +1,4 @@
-
-import asyncio
+Import asyncio
 import json
 import sys
 from bot import Bot, web_app
