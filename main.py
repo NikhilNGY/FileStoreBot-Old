@@ -1,4 +1,3 @@
-# Made by @NaapaExtra for @Realm_Bots 
 
 import asyncio
 import json
