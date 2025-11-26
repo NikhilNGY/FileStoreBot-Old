@@ -1,3 +1,5 @@
+# Made by @NaapaExtra for @Realm_Bots 
+
 from aiohttp import web
 from plugins import web_server
 import sys
@@ -32,13 +34,13 @@ class Bot(Client):
         self.LOGGER = LOGGER
         self.name = session
         
-        # --- Handle Multiple Database Channels (Supports String or List) ---
+        # --- Handle Multiple Database Channels (Supports String or List from JSON) ---
         self.db_channels = []
         try:
             if isinstance(db, list):
                 self.db_channels = [int(x) for x in db]
             elif isinstance(db, str):
-                # Handle comma separated string: "-100123, -100456"
+                # Handle comma separated string if passed
                 if "," in db:
                     self.db_channels = [int(x.strip()) for x in db.split(",") if x.strip().lstrip("-").isdigit()]
                 else:
@@ -47,6 +49,7 @@ class Bot(Client):
                 self.db_channels = [int(db)]
         except Exception as e:
             self.LOGGER(__name__, self.name).warning(f"DB Channel ID format warning: {e}")
+            # Fallback
             if isinstance(db, list):
                 self.db_channels = db
             else:
@@ -98,7 +101,6 @@ class Bot(Client):
                 await message.delete()
                 # self.LOGGER(__name__, self.name).info(f"Auto-deleted media from user {user.id} in PM.")
             except Exception as e:
-                # self.LOGGER(__name__, self.name).warning(f"Failed to auto-delete user media: {e}")
                 pass
 
     async def start(self):
@@ -137,7 +139,7 @@ class Bot(Client):
             self.reply_text = saved_settings.get("reply_text", self.reply_text)
             self.fsub = saved_settings.get("fsub", self.fsub)
         else:
-            self.LOGGER(__name__, self.name).info("Using config.py settings.")
+            self.LOGGER(__name__, self.name).info("No saved settings found. Using initial config from setup.json.")
 
         # --- Initialize Force Sub Channels ---
         self.fsub_dict = {}
@@ -179,6 +181,7 @@ class Bot(Client):
         for db_id in self.db_channels:
             try:
                 chat = await self.get_chat(db_id)
+                # We send a test message to ensure we have Write Access
                 test = await self.send_message(chat_id=db_id, text=f"Bot Connected: @{self.username}")
                 await test.delete()
             except Exception as e:
