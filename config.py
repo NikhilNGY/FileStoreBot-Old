@@ -58,7 +58,7 @@ FSUBS = [
 
 # ------------------  DATABASE CHANNEL ---------------------------
 
-DB_CHANNEL = env_str("DB_CHANNEL", "-1002093620952")
+DB_CHANNEL = env_str("DB_CHANNEL", "-1002093620952, -1001683081282")
 
 
 # ------------------  AUTO DELETE TIMER --------------------------
