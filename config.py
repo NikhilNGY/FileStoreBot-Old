@@ -4,7 +4,6 @@ from logging.handlers import RotatingFileHandler
 
 # ================================================================
 #  SECURE & STABLE BOT CONFIG
-#  Works even if environment variables are missing/empty.
 # ================================================================
 
 def env_int(key, default):
@@ -58,6 +57,7 @@ FSUBS = [
 
 # ------------------  DATABASE CHANNEL ---------------------------
 
+# Can be a single ID or multiple IDs separated by comma
 DB_CHANNEL = env_str("DB_CHANNEL", "-1002093620952, -1001683081282")
 
 
